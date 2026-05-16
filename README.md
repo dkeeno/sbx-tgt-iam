@@ -19,27 +19,27 @@ The OIDC provider itself (`token.actions.githubusercontent.com`) already exists 
 
 ## CI workflow
 
-`.github/workflows/terraform.yml` mirrors the sbx-* pattern:
+`.github/workflows/terraform.yml` mirrors the `sbx-cluster-iac` pattern (GitLab-style validate → plan → manual-apply, chained via `needs:`):
 
-| Trigger | Job |
+| Trigger | Jobs |
 |---|---|
-| PR open / sync | fmt-check → validate → plan (posted as PR comment) |
-| Push to main | fmt-check → validate → plan (artifacted) |
-| `workflow_dispatch` (`action=apply`) | apply, gated by GitHub Environment `production` |
-| `workflow_dispatch` (`action=destroy`) | destroy, same gate |
+| PR open / sync | validate → plan (plan posted as PR comment) |
+| Push to main | validate → plan → apply (apply pauses on `production` environment gate) |
+| `workflow_dispatch` (`action=apply`) | validate → plan → apply (fresh plan + apply, same gate) |
+| `workflow_dispatch` (`action=destroy`) | destroy (gated by same environment) |
 
 This repo is **named with the `sbx-` prefix** so it inherits the existing `sbx-github-actions` role's OIDC trust (`repo:dkeeno/sbx-*:*`). The workflow assumes `sbx-github-actions` to apply (creating `tgt-github-actions`). After apply, set `AWS_ROLE_ARN` on each `tgt-*` repo to the new role's ARN (printed in the Terraform output).
 
-## Apply
-
-Standard pattern:
+## Apply (standard pattern)
 
 1. Open a PR with the desired change.
-2. Wait for CI plan to complete; review the plan in the PR comment.
-3. Merge PR (squash).
-4. Go to **Actions → terraform → Run workflow → action: `apply`**.
-5. Approve at the `production` environment gate.
-6. Capture the `tgt_role_arn` output and set it as `AWS_ROLE_ARN` secret on each `tgt-*` repo.
+2. Wait for CI `plan` to complete; review the plan output as a PR comment.
+3. Merge the PR (squash).
+4. The merge triggers a new workflow run: validate → plan → apply.
+5. The `apply` job pauses at the `production` environment gate. A banner appears at the top of the run page: **Review deployments → select `production` → Approve and deploy**.
+6. Apply runs. Capture the `tgt_role_arn` value from the `terraform-outputs-<run_id>` artifact and set it as `AWS_ROLE_ARN` secret on each `tgt-*` repo.
+
+Environment is configured with `Required reviewers: dkeeno` and `prevent_self_review: false` — GitHub still REQUIRES the click (does NOT auto-approve), but allows the reviewer to be the deployer in solo-dev mode.
 
 ## Destroy
 

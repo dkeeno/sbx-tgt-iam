@@ -137,12 +137,26 @@ jobs:
         run: exit 1
 
   # ---------------------------------------------------------------------------
-  # apply — workflow_dispatch only (manual approval gate)
+  # apply — runs on push-to-main (gated) OR manual workflow_dispatch
   # ---------------------------------------------------------------------------
+  #
+  # GitLab-equivalent design: same pipeline run as validate+plan. After plan
+  # succeeds, the apply job pauses on the `production` Environment gate.
+  # User clicks "Review deployments → Approve and deploy" on the SAME run
+  # to continue. Apply re-uses the plan artifact (same workflow run = same
+  # ephemeral storage).
+  #
+  # For sandbox (1-person), the production environment is configured with
+  # `Required reviewers: dkeeno` and `prevent_self_review: false` — GitHub
+  # still REQUIRES the click (does NOT auto-approve), but allows the
+  # reviewer to be the deployer in solo-dev mode. Branch policy: main only.
   apply:
     name: apply
     runs-on: ubuntu-latest
-    if: github.event_name == 'workflow_dispatch' && inputs.action == 'apply'
+    needs: plan
+    if: |
+      (github.event_name == 'push' && github.ref == 'refs/heads/main')
+      || (github.event_name == 'workflow_dispatch' && inputs.action == 'apply')
     environment: production
     steps:
       - uses: actions/checkout@v4
@@ -161,7 +175,20 @@ jobs:
       - name: Init
         run: terraform init
 
-      - name: Apply
+      # Download the plan artifact from the plan job (same workflow run)
+      # so apply executes EXACTLY what was reviewed at plan time.
+      - name: Download plan artifact
+        if: github.event_name == 'push'
+        uses: actions/download-artifact@v4
+        with:
+          name: tfplan-${{ github.run_id }}
+
+      - name: Apply (push to main → use plan artifact)
+        if: github.event_name == 'push'
+        run: terraform apply -auto-approve tfplan
+
+      - name: Apply (workflow_dispatch → fresh plan + apply)
+        if: github.event_name == 'workflow_dispatch'
         run: terraform apply -auto-approve
 
       - name: Capture outputs
