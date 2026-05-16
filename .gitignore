@@ -1,0 +1,11 @@
+# Per HARD RULE: exclude both .terraform/ and the lock file
+.terraform/
+.terraform.lock.hcl
+
+# Local plan artifacts
+*.tfplan
+plan-output.txt
+terraform-outputs.json
+
+# OS
+.DS_Store
